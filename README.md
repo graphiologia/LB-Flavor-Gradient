@@ -1,6 +1,6 @@
-# LB Flavor Gradient — Sliders Build
+# LB Flavor Gradient — Coffee Map + History
 
-This build matches your preview: LB branding + per‑flavor stop sliders + smudge option + export dropdown, with logo included.
+Includes expanded coffee flavor notes, palette history (localStorage), smear/linear/radial/conic, and export dropdown. Logo supported at `/public/lb-logo.png`.
 
 ## Run locally
 ```bash
