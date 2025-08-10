@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Copy, Sparkles, Wand2, RotateCw, History, Trash2, Plus, Stars } from "lucide-react";
+import { Download, Copy, Sparkles, Wand2, RotateCw, History, Trash2, Plus } from "lucide-react";
 
 // ---------- Flavor helpers ----------
 const FLAVOR_MAP = {
@@ -54,72 +54,6 @@ const FLAVOR_MAP = {
   dragonfruit: "#ff2d95",
   passionfruit: "#ffb000",
   kiwi: "#89d42d",
-
-  // Coffee notes
-  almond: "#deb887",
-  hazelnut: "#cfa07e",
-  walnut: "#b08466",
-  peanut: "#d6a77a",
-  pistachio: "#93c47d",
-  cashew: "#e6c9a8",
-  pecan: "#a96f4e",
-  macadamia: "#e8d4b0",
-  honey: "#ffd166",
-  maple: "#bf7f30",
-  brown_sugar: "#b66a2e",
-  molasses: "#5b371c",
-  toffee: "#c68642",
-  cane_sugar: "#ffe8b0",
-  panela: "#d0994d",
-  marshmallow: "#fff1e6",
-  cocoa: "#6b3d2e",
-  dark_chocolate: "#3e2620",
-  milk_chocolate: "#7b4a36",
-  cacao_nib: "#4a2e25",
-  cinnamon: "#b6652a",
-  clove: "#5b2b19",
-  cardamom: "#9fb37a",
-  nutmeg: "#8b5a2b",
-  anise: "#3b2a2f",
-  black_pepper: "#333333",
-  ginger: "#d08a3a",
-  allspice: "#6e4a2f",
-  rose: "#ffb6c1",
-  hibiscus: "#d81b60",
-  chamomile: "#fff2b2",
-  honeysuckle: "#f6e27a",
-  violet: "#b497ff",
-  elderflower: "#eef4d2",
-  bergamot: "#ffd27a",
-  grapefruit: "#ff7666",
-  orange_zest: "#ff8c00",
-  red_apple: "#ff6b6b",
-  green_apple: "#8bd36a",
-  pear: "#c9e19a",
-  peach_note: "#ffb48f",
-  apricot: "#ffb36b",
-  plum: "#8f5a9e",
-  cherry_note: "#d4435b",
-  blackberry: "#4b2e83",
-  raspberry_note: "#e34b78",
-  cranberry: "#c2253a",
-  grape_note: "#7b5cff",
-  raisin: "#5c3b2e",
-  date: "#7a4a2e",
-  fig: "#7f5b45",
-  prune: "#5a3b52",
-  papaya: "#ffa25c",
-  pineapple_note: "#ffe66d",
-  passionfruit_note: "#ffb000",
-  guava: "#ff7f8a",
-  tamarind: "#7a3d1d",
-  sage: "#a3b18a",
-  thyme: "#9db17c",
-  rosemary: "#8aa07a",
-  lemongrass: "#cfe68a",
-  earl_grey: "#c9b18f",
-  cedar: "#8b5e3c",
-  tobacco: "#6a4a3c",
 };
 
 function normKey(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim(); }
@@ -166,16 +100,19 @@ function fbm(noise, x, y, octaves, lacunarity, gain) {
 export default function App() {
   // --- Controls ---
   const [flavorsInput, setFlavorsInput] = useState("ube, mango, coconut");
+  const [gradientType, setGradientType] = useState("linear"); // linear | radial | conic
+  const [effect, setEffect] = useState("both"); // none | smear | fractal | both
+  const [pattern, setPattern] = useState("none"); // none | stripes | dots | noise
   const [angle, setAngle] = useState(30);
+  const [radius, setRadius] = useState(50);
 
   // smear
   const [smearStrength, setSmearStrength] = useState(0.45);
   const [streakScale, setStreakScale] = useState(160);
   const [seed, setSeed] = useState(7);
-  const [quality, setQuality] = useState("fast"); // "fast" | "high"
+  const [quality, setQuality] = useState("fast");
 
   // fractal overlay
-  const [useFractal, setUseFractal] = useState(true);
   const [fractalIntensity, setFractalIntensity] = useState(0.25);
   const [fractalScale, setFractalScale] = useState(140);
   const [fractalOctaves, setFractalOctaves] = useState(4);
@@ -223,48 +160,96 @@ export default function App() {
     return pairs;
   }, [colors, stops, autoSortStops]);
 
-  const cssGradient = useMemo(() => {
-    const str = stopsWithColors.map(s => `${s.color} ${Math.max(0, Math.min(100, s.pos))}%`).join(", ");
-    return `linear-gradient(${angle}deg, ${str})`;
-  }, [stopsWithColors, angle]);
-
-  // draw preview
-  useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
-
-    const parent = canvas.parentElement;
-    const rect = parent ? parent.getBoundingClientRect() : { width: 900, height: 520 };
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const w = Math.max(512, Math.floor(rect.width * dpr));
-    const h = Math.max(512, Math.floor(rect.height * dpr));
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-
-    // base gradient
+  // base gradient painter
+  function paintBaseGradient(ctx, w, h) {
     const rad = (angle * Math.PI) / 180;
-    const x1 = w / 2 - Math.cos(rad) * w;
-    const y1 = h / 2 - Math.sin(rad) * h;
-    const x2 = w / 2 + Math.cos(rad) * w;
-    const y2 = h / 2 + Math.sin(rad) * h;
-    const g = ctx.createLinearGradient(x1, y1, x2, y2);
-    stopsWithColors.forEach(s => g.addColorStop(s.pos / 100, s.color));
-    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-
-    // smear
-    if (smearStrength > 0) {
-      const passes = Math.max(4, Math.round(24 * smearStrength));
-      const shift = Math.max(1, Math.round((w + h) * 0.0015 * smearStrength));
-      ctx.globalAlpha = 0.06;
-      for (let i = 0; i < passes; i++) {
-        const dx = Math.cos(rad) * shift * (i + 1);
-        const dy = Math.sin(rad) * shift * (i + 1);
-        ctx.drawImage(canvas, dx, dy);
+    if (gradientType === "linear") {
+      const x1 = w / 2 - Math.cos(rad) * w, y1 = h / 2 - Math.sin(rad) * h;
+      const x2 = w / 2 + Math.cos(rad) * w, y2 = h / 2 + Math.sin(rad) * h;
+      const g = ctx.createLinearGradient(x1, y1, x2, y2);
+      stopsWithColors.forEach(s => g.addColorStop(s.pos / 100, s.color));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    } else if (gradientType === "radial") {
+      const maxR = Math.max(w, h) * (radius / 50);
+      const g = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, maxR);
+      stopsWithColors.forEach(s => g.addColorStop(s.pos / 100, s.color));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    } else {
+      // conic approximation
+      const cx=w/2, cy=h/2; const start=rad; const n=Math.max(128, stopsWithColors.length*48);
+      const palette = stopsWithColors.slice().sort((a,b)=>a.pos-b.pos);
+      const lerpRGB = (ca, cb, t) => {
+        const pa=parseInt(ca.slice(1),16), pb=parseInt(cb.slice(1),16);
+        const ra=(pa>>16)&255, ga=(pa>>8)&255, ba=pa&255;
+        const rb=(pb>>16)&255, gb=(pb>>8)&255, bb=pb&255;
+        const r=Math.round(ra+(rb-ra)*t), g=Math.round(ga+(gb-ga)*t), b=Math.round(ba+(bb-ba)*t);
+        return `rgb(${r},${g},${b})`;
+      };
+      const pick = (pct) => {
+        if (palette.length === 1) return palette[0].color;
+        for (let i=1;i<palette.length;i++){
+          if (pct <= palette[i].pos){
+            const a=palette[i-1], b=palette[i];
+            const span = Math.max(1, b.pos - a.pos);
+            const t = Math.max(0, Math.min(1, (pct - a.pos) / span));
+            return lerpRGB(a.color, b.color, t);
+          }
+        }
+        return palette[palette.length-1].color;
+      };
+      for (let i=0;i<n;i++){
+        const t0=(i/n)*Math.PI*2+start; const t1=((i+1)/n)*Math.PI*2+start;
+        const pct=(i/(n-1))*100;
+        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,Math.hypot(w,h), t0,t1); ctx.closePath();
+        ctx.fillStyle = pick(pct); ctx.fill();
       }
-      ctx.globalAlpha = 1;
+    }
+  }
+
+  // effects
+  function applyEffects(ctx, canvas) {
+    const w = canvas.width, h = canvas.height;
+    const doSmear = effect === "smear" || effect === "both";
+    const doFractal = effect === "fractal" || effect === "both";
+
+    if (doSmear) {
+      // smear similar to user's smudge
+      const rad = (angle * Math.PI) / 180; const ux = Math.cos(rad), uy = Math.sin(rad);
+      const px = quality === "fast" ? 2 : 1;
+      const noise = makeNoise(seed);
+      const maxDisp = smearStrength * Math.max(w, h) * 0.06;
+      const stripeScale = streakScale;
+      const vx = -uy, vy = ux;
+      const src = ctx.getImageData(0,0,w,h);
+      const out = ctx.createImageData(w,h);
+      const data = src.data, odata = out.data;
+      for (let y=0;y<h;y+=px){
+        for (let x=0;x<w;x+=px){
+          const nBase = noise(x/stripeScale*1.2, y/stripeScale*1.2);
+          const nAlong = noise((x*ux + y*uy)/(stripeScale*2), (x*vx + y*vy)/(stripeScale*2));
+          const signed = (nBase*1.2 + nAlong*0.5) - 0.85;
+          const mag = Math.max(-1, Math.min(1, signed)) * maxDisp;
+          const wobble = noise(y/32, x/32) - 0.5;
+          const dx = ux * mag + vx * mag * 0.15 * wobble;
+          const dy = uy * mag + vy * mag * 0.15 * wobble;
+          let sx = Math.max(0, Math.min(w-1, Math.floor(x + dx)));
+          let sy = Math.max(0, Math.min(h-1, Math.floor(y + dy)));
+          const si = (sy*w + sx) * 4;
+          for (let oy=0; oy<px; oy++){
+            for (let ox=0; ox<px; ox++){
+              const di = ((y+oy)*w + (x+ox)) * 4;
+              odata[di]   = data[si];
+              odata[di+1] = data[si+1];
+              odata[di+2] = data[si+2];
+              odata[di+3] = 255;
+            }
+          }
+        }
+      }
+      ctx.putImageData(out,0,0);
     }
 
-    // fractal
-    if (useFractal && fractalIntensity > 0) {
+    if (doFractal) {
       const noise = makeNoise(seed);
       const img = ctx.getImageData(0, 0, w, h);
       const d = img.data;
@@ -284,9 +269,50 @@ export default function App() {
       }
       ctx.putImageData(img, 0, 0);
     }
-  }, [stopsWithColors, angle, smearStrength, streakScale, seed, quality, useFractal, fractalIntensity, fractalScale, fractalOctaves]);
 
-  function copyCss() { navigator.clipboard.writeText(cssGradient); }
+    // optional pattern overlay (preserved from user's edits)
+    if (pattern !== "none") {
+      ctx.save(); ctx.globalAlpha = 0.25;
+      if (pattern === "stripes") {
+        const stripeSize = Math.max(8, Math.floor(Math.min(w,h)/40));
+        ctx.translate(w/2,h/2); ctx.rotate((Math.PI/180)*angle); ctx.translate(-w/2,-h/2);
+        ctx.fillStyle = "#ffffff"; for (let x=-w; x<w*2; x+=stripeSize*2) ctx.fillRect(x,-h, stripeSize, h*3);
+      } else if (pattern === "dots") {
+        const gap = Math.max(10, Math.floor(Math.min(w,h)/30)); const r = gap/6; ctx.fillStyle = "#ffffff";
+        for (let yy=0; yy<h+gap; yy+=gap) { for (let xx=((yy/gap)%2?gap/2:0); xx<w+gap; xx+=gap) { ctx.beginPath(); ctx.arc(xx,yy,r,0,Math.PI*2); ctx.fill(); } }
+      } else if (pattern === "noise") {
+        const img=ctx.getImageData(0,0,w,h); const d=img.data; for(let i=0;i<d.length;i+=4){ const n=(Math.random()*255)|0; d[i]=(d[i]*0.9+n*0.1)|0; d[i+1]=(d[i+1]*0.9+n*0.1)|0; d[i+2]=(d[i+2]*0.9+n*0.1)|0; } ctx.putImageData(img,0,0);
+      }
+      ctx.restore();
+    }
+  }
+
+  // draw preview
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const parent = canvas.parentElement;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
+
+    const rect = parent ? parent.getBoundingClientRect() : { width: 900, height: 520 };
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const w = Math.max(512, Math.floor(rect.width * dpr));
+    const h = Math.max(512, Math.floor(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+
+    ctx.clearRect(0, 0, w, h);
+    paintBaseGradient(ctx, w, h);
+    applyEffects(ctx, canvas);
+  }, [stopsWithColors, angle, radius, gradientType, effect, pattern, smearStrength, streakScale, seed, quality, fractalIntensity, fractalScale, fractalOctaves]);
+
+  function copyCss() {
+    const str = stopsWithColors.map(s => `${s.color} ${Math.max(0, Math.min(100, s.pos))}%`).join(", ");
+    const css = gradientType === "linear"
+      ? `linear-gradient(${angle}deg, ${str})`
+      : gradientType === "radial"
+        ? `radial-gradient(circle ${radius}% at 50% 50%, ${str})`
+        : `conic-gradient(from ${angle}deg at 50% 50%, ${str})`;
+    navigator.clipboard.writeText(css);
+  }
 
   function downloadPng() {
     const dpr = Math.min(3, window.devicePixelRatio || 1);
@@ -295,46 +321,8 @@ export default function App() {
     out.height = Math.floor(exportSize * dpr);
     const ctx = out.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
 
-    const w = out.width, h = out.height;
-    const rad = (angle * Math.PI) / 180;
-    const x1 = w / 2 - Math.cos(rad) * w, y1 = h / 2 - Math.sin(rad) * h;
-    const x2 = w / 2 + Math.cos(rad) * w, y2 = h / 2 + Math.sin(rad) * h;
-    const g = ctx.createLinearGradient(x1, y1, x2, y2);
-    stopsWithColors.forEach(s => g.addColorStop(s.pos / 100, s.color));
-    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-
-    if (smearStrength > 0) {
-      const passes = Math.max(4, Math.round(24 * smearStrength));
-      const shift = Math.max(1, Math.round((w + h) * 0.0015 * smearStrength));
-      ctx.globalAlpha = 0.06;
-      for (let i = 0; i < passes; i++) {
-        const dx = Math.cos(rad) * shift * (i + 1);
-        const dy = Math.sin(rad) * shift * (i + 1);
-        ctx.drawImage(out, dx, dy);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    if (useFractal && fractalIntensity > 0) {
-      const noise = makeNoise(seed);
-      const img = ctx.getImageData(0, 0, w, h);
-      const d = img.data;
-      const scale = Math.max(40, fractalScale);
-      const oct = Math.max(2, Math.min(7, fractalOctaves));
-      const gamma = 1.2;
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          let n = fbm(noise, x / scale, y / scale, oct, 2.0, 0.5);
-          n = Math.max(0, Math.min(1, Math.pow(n, gamma)));
-          const i = (y * w + x) * 4;
-          const v = Math.floor(255 * n * fractalIntensity);
-          d[i] = Math.min(255, d[i] + v);
-          d[i + 1] = Math.min(255, d[i + 1] + v);
-          d[i + 2] = Math.min(255, d[i + 2] + v);
-        }
-      }
-      ctx.putImageData(img, 0, 0);
-    }
+    paintBaseGradient(ctx, out.width, out.height);
+    applyEffects(ctx, out);
 
     const a = document.createElement("a");
     a.download = `lb-flavor-gradient-${Date.now()}.png`;
@@ -350,7 +338,6 @@ export default function App() {
       "mint, lime, coconut",
       "caramel, vanilla, coffee",
       "peach, mango, passionfruit",
-      "bergamot, jasmine, honey",
       "raspberry, cacao nib, hazelnut"
     ];
     const pick = PRESETS[Math.floor(Math.random() * PRESETS.length)];
@@ -372,13 +359,43 @@ export default function App() {
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Branding */}
         <div className="flex items-center gap-3">
-          <img src="/lb-logo.png" alt="LB Logo" className="w-12 h-12 rounded-full bg-white/5 object-contain" onError={(e)=>{e.currentTarget.style.display='none'}} />
+          <img src="/lb-logo.png" alt="LB Logo" className="w-12 h-12 rounded-full bg-white/5 object-contain" onError={(e)=>{e.currentTarget.src='/lb-logo.svg'}} />
           <h1 className="text-2xl font-bold">LB Flavor Gradient</h1>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Controls */}
-          <section className="lg:col-span-1 space-y-4">
+          {/* Preview first on mobile; second on desktop */}
+          <section className="order-1 lg:order-2 lg:col-span-2 space-y-4">
+            <div className="rounded-2xl border border-neutral-800 overflow-hidden">
+              <div className="p-3 text-sm text-neutral-300 flex items-center gap-2 bg-neutral-900/60 border-b border-neutral-800">
+                <Wand2 className="w-4 h-4" /> Canvas preview (exports exactly)
+              </div>
+              <div className="h-72 md:h-96 bg-neutral-900 flex items-center justify-center">
+                <canvas ref={canvasRef} className="w-full h-full object-cover" />
+              </div>
+            </div>
+
+            {/* History grid */}
+            <div className="rounded-2xl border border-neutral-800 overflow-hidden">
+              <div className="p-3 text-sm text-neutral-300 bg-neutral-900/60 border-b border-neutral-800 flex items-center gap-2"><History className="w-4 h-4"/> Palette history</div>
+              <div className="p-3 flex flex-wrap gap-2">
+                <button onClick={saveCurrentToHistory} className="text-xs px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400 flex items-center gap-1"><Plus className="w-3 h-3"/> Save current</button>
+                <button onClick={() => setHistory([])} className="text-xs px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-red-500 flex items-center gap-1"><Trash2 className="w-3 h-3"/> Clear</button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 p-3">
+                {history.length === 0 and <div className="text-xs text-neutral-400 col-span-full">No saved palettes yet.</div>}
+                {history.map((p, i) => (
+                  <button key={i} onClick={() => setFlavorsInput(p)} className="group rounded-xl overflow-hidden border border-neutral-800 hover:border-amber-400 transition-colors" title={p}>
+                    <div className="h-12" style={{ backgroundImage: makePreviewGradient(p) }} />
+                    <div className="p-2 text-[11px] text-neutral-300 text-left truncate">{p}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Controls second on mobile; first on desktop */}
+          <section className="order-2 lg:order-1 lg:col-span-1 space-y-4">
             <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 space-y-4 shadow-xl">
               <label className="text-sm text-neutral-300">Type flavor prompts (comma or new line)</label>
               <textarea
@@ -398,85 +415,88 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Per-flavor stop sliders */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs text-neutral-400">Color stops</label>
-                  <div className="flex items-center gap-2">
-                    <label className="text-[11px] text-neutral-400 flex items-center gap-1">
-                      <input type="checkbox" checked={autoSortStops} onChange={e => setAutoSortStops(e.target.checked)} />
-                      Auto-sort
-                    </label>
-                    <button
-                      onClick={() => {
-                        const even = colors.map((_, i) => Math.round((i / Math.max(colors.length - 1, 1)) * 100));
-                        setStops(even);
-                      }}
-                      className="text-[11px] px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400"
-                    >
-                      Distribute evenly
-                    </button>
-                  </div>
+              {/* Dropdowns */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-neutral-400">Gradient style</label>
+                  <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={gradientType} onChange={e => setGradientType(e.target.value)}>
+                    <option value="linear">Linear</option>
+                    <option value="radial">Radial</option>
+                    <option value="conic">Conic</option>
+                  </select>
                 </div>
-                {colors.map((c, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <span className="w-5 h-5 rounded-full border border-white/20 shrink-0" style={{ backgroundColor: c }} />
-                    <span className="text-xs text-neutral-300 w-28 truncate">{flavors[i] || `Stop ${i + 1}`}</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={stops[i] ?? 0}
-                      onChange={e => {
-                        const v = Math.max(0, Math.min(100, parseInt(e.target.value)));
-                        setStops(prev => {
-                          const base = prev.length ? prev : colors.map((_, j) => Math.round((j / Math.max(colors.length - 1, 1)) * 100));
-                          const next = [...base];
-                          next[i] = v;
-                          return next;
-                        });
-                      }}
-                      className="w-full"
-                    />
-                    <span className="text-xs text-neutral-400 w-10 text-right">{stops[i] ?? 0}%</span>
-                  </div>
-                ))}
+                <div>
+                  <label className="text-xs text-neutral-400">Effect</label>
+                  <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={effect} onChange={e => setEffect(e.target.value)}>
+                    <option value="none">None</option>
+                    <option value="smear">Smear</option>
+                    <option value="fractal">Fractal</option>
+                    <option value="both">Smear + Fractal</option>
+                  </select>
+                </div>
               </div>
 
+              {/* Pattern (preserved) */}
+              <div>
+                <label className="text-xs text-neutral-400">Pattern</label>
+                <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={pattern} onChange={e => setPattern(e.target.value)}>
+                  <option value="none">None</option>
+                  <option value="stripes">Stripes</option>
+                  <option value="dots">Dots</option>
+                  <option value="noise">Noise</option>
+                </select>
+              </div>
+
+              {/* Angle / Radius */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-neutral-400">Angle: {angle}°</label>
                   <input type="range" min={0} max={360} value={angle} onChange={e => setAngle(parseInt(e.target.value))} className="w-full" />
                 </div>
-                <div>
-                  <label className="text-xs text-neutral-400">Smear strength: {Math.round(smearStrength * 100)}%</label>
-                  <input type="range" min={0} max={100} value={Math.round(smearStrength * 100)} onChange={e => setSmearStrength(parseInt(e.target.value) / 100)} className="w-full" />
-                </div>
+                {gradientType === "radial" && (
+                  <div>
+                    <label className="text-xs text-neutral-400">Radius: {radius}%</label>
+                    <input type="range" min={10} max={150} value={radius} onChange={e => setRadius(parseInt(e.target.value))} className="w-full" />
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-neutral-400">Fractal intensity: {Math.round(fractalIntensity * 100)}%</label>
-                  <input type="range" min={0} max={100} value={Math.round(fractalIntensity * 100)} onChange={e => setFractalIntensity(parseInt(e.target.value) / 100)} className="w-full" />
+              {/* Effect controls */}
+              {["smear","both"].includes(effect) && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-neutral-400">Smear strength: {Math.round(smearStrength * 100)}%</label>
+                    <input type="range" min={0} max={100} value={Math.round(smearStrength * 100)} onChange={e => setSmearStrength(parseInt(e.target.value) / 100)} className="w-full" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-400">Streak scale: {streakScale}px</label>
+                    <input type="range" min={40} max={400} value={streakScale} onChange={e => setStreakScale(parseInt(e.target.value))} className="w-full" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-neutral-400">Quality</label>
+                    <button onClick={() => setQuality(q => q === "fast" ? "high" : "fast")} className="px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400">{quality.toUpperCase()}</button>
+                    <button onClick={() => setSeed(s => s + 1)} className="ml-auto flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-fuchsia-400"><RotateCw className="w-3 h-3" /> New seed</button>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-neutral-400">Fractal scale: {fractalScale}px</label>
-                  <input type="range" min={60} max={400} value={fractalScale} onChange={e => setFractalScale(parseInt(e.target.value))} className="w-full" />
+              )}
+              {["fractal","both"].includes(effect) && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-neutral-400">Fractal intensity: {Math.round(fractalIntensity * 100)}%</label>
+                    <input type="range" min={0} max={100} value={Math.round(fractalIntensity * 100)} onChange={e => setFractalIntensity(parseInt(e.target.value) / 100)} className="w-full" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-400">Fractal scale: {fractalScale}px</label>
+                    <input type="range" min={60} max={400} value={fractalScale} onChange={e => setFractalScale(parseInt(e.target.value))} className="w-full" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-400">Fractal octaves: {fractalOctaves}</label>
+                    <input type="range" min={2} max={7} value={fractalOctaves} onChange={e => setFractalOctaves(parseInt(e.target.value))} className="w-full" />
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-neutral-400">Fractal octaves: {fractalOctaves}</label>
-                  <input type="range" min={2} max={7} value={fractalOctaves} onChange={e => setFractalOctaves(parseInt(e.target.value))} className="w-full" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-neutral-400">Quality</label>
-                  <button onClick={() => setQuality(q => q === "fast" ? "high" : "fast")} className="px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400">{quality.toUpperCase()}</button>
-                  <button onClick={() => setSeed(s => s + 1)} className="ml-auto flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-fuchsia-400"><RotateCw className="w-3 h-3" /> New seed</button>
-                </div>
-              </div>
-
+              {/* Export */}
               <div>
                 <label className="text-xs text-neutral-400">Export size</label>
                 <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={exportSize} onChange={e => setExportSize(parseInt(e.target.value))}>
@@ -495,36 +515,6 @@ export default function App() {
                 <button onClick={downloadPng} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500 text-neutral-900 font-semibold hover:bg-amber-400"><Download className="w-4 h-4" /> Download PNG</button>
                 <button onClick={surpriseMe} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 hover:border-fuchsia-400"><Sparkles className="w-4 h-4" /> Surprise me</button>
                 <button onClick={saveCurrentToHistory} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 hover:border-amber-400"><Plus className="w-4 h-4" /> Save to history</button>
-              </div>
-
-              <p className="text-xs text-neutral-400 pt-2">Tip: Try coffee notes like “bergamot, jasmine, honey”, “raspberry, cacao nib, hazelnut”, or “grapefruit, caramel, almond”.</p>
-            </div>
-          </section>
-
-          {/* Single preview (canvas only) */}
-          <section className="lg:col-span-2 space-y-4">
-            <div className="rounded-2xl border border-neutral-800 overflow-hidden">
-              <div className="p-3 text-sm text-neutral-300 flex items-center gap-2 bg-neutral-900/60 border-b border-neutral-800"><Wand2 className="w-4 h-4" /> Canvas preview (exports exactly)</div>
-              <div className="h-72 md:h-96 bg-neutral-900 flex items-center justify-center">
-                <canvas ref={canvasRef} className="w-full h-full object-cover" />
-              </div>
-            </div>
-
-            {/* History grid */}
-            <div className="rounded-2xl border border-neutral-800 overflow-hidden mt-4">
-              <div className="p-3 text-sm text-neutral-300 bg-neutral-900/60 border-b border-neutral-800 flex items-center gap-2"><History className="w-4 h-4"/> Palette history</div>
-              <div className="p-3 flex flex-wrap gap-2">
-                <button onClick={saveCurrentToHistory} className="text-xs px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400 flex items-center gap-1"><Plus className="w-3 h-3"/> Save current</button>
-                <button onClick={() => setHistory([])} className="text-xs px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-red-500 flex items-center gap-1"><Trash2 className="w-3 h-3"/> Clear</button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 p-3">
-                {history.length === 0 && <div className="text-xs text-neutral-400 col-span-full">No saved palettes yet.</div>}
-                {history.map((p, i) => (
-                  <button key={i} onClick={() => setFlavorsInput(p)} className="group rounded-xl overflow-hidden border border-neutral-800 hover:border-amber-400 transition-colors" title={p}>
-                    <div className="h-12" style={{ backgroundImage: makePreviewGradient(p) }} />
-                    <div className="p-2 text-[11px] text-neutral-300 text-left truncate">{p}</div>
-                  </button>
-                ))}
               </div>
             </div>
           </section>

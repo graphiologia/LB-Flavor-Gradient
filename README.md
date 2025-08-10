@@ -1,7 +1,11 @@
-# LB Flavor Gradient — Final App
+# LB Flavor Gradient — Merged Build
 
-Single preview window (canvas that matches export), smear + fractal overlay, per-flavor stop sliders, coffee flavor notes,
-palette history (localStorage), export size dropdown (remembers last choice), and LB logo in /public.
+- Gradient style + Effect dropdowns, plus Pattern overlay retained
+- Mobile: Preview above settings; Desktop: Preview to the right
+- Exported PNG matches preview with all effects
+- Logo bundled in /public (PNG if provided, SVG fallback otherwise)
+- Export size remembers last choice, palette history in localStorage
+- Flavor parsing supports commas OR new lines
 
 ## Run locally
 ```bash
@@ -14,5 +18,3 @@ npm run dev
 npm run build
 npm run preview
 ```
-
-Deploy `dist/` to Netlify, Vercel, or GitHub Pages.
