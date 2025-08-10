@@ -1,22 +1,15 @@
-# LB Flavor Gradient — Smudge Edition
+# Lokal Brew Coffee Flavor Visualizer
+Single-canvas preview that exactly matches the export. Gradient style + effect dropdowns, smudge controls, export sizes, and LB logo included.
 
-This is a Vite + React build of the latest canvas code you provided.
-
-- Smudge effect with amount/scale/seed/quality controls
-- Linear / Radial / Conic base gradient modes
-- Optional overlays: stripes / dots / noise
-- Dual preview: CSS and baked canvas (export uses the baked canvas)
-- Export size selector up to 4096
-- Flavor parsing supports commas or new lines
-
-## Run locally
+## Quick start
 ```bash
 npm i
 npm run dev
 ```
 
-## Build for the web
+## Build
 ```bash
 npm run build
 npm run preview
+# Deploy the dist/ folder to Netlify, Vercel, or GitHub Pages
 ```

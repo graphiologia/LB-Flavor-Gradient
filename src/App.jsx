@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Copy, Sparkles, Wand2, RotateCw, Plus } from "lucide-react";
+import { Download, Copy, Sparkles, Wand2, RotateCw } from "lucide-react";
 
 // --- Flavor helpers --------------------------------------------------------
 const FLAVOR_MAP = {
@@ -26,7 +26,6 @@ const FLAVOR_MAP = {
   lavender: "#b497ff",
   vanilla: "#f4e1c1",
   caramel: "#c68642",
-  butterscotch: "#e0a55f",
   chocolate: "#5c3a21",
   mocha: "#7a5230",
   coffee: "#5a3c2e",
@@ -53,233 +52,199 @@ const FLAVOR_MAP = {
   lychee: "#ffd4da",
   dragonfruit: "#ff2d95",
   passionfruit: "#ffb000",
-  kiwi: "#89d42d",
+  kiwi: "#89d42d"
 };
 
-function normKey(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim(); }
-function hashHue(str) { let h = 0; for (let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return h%360; }
-function hslToHex(h,s,l){ s/=100; l/=100; const k=n=>(n+h/30)%12; const a=s*Math.min(l,1-l); const f=n=>l-a*Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n),1))); const toHex=x=>Math.round(255*x).toString(16).padStart(2,"0"); return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`; }
+function normKey(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'').trim(); }
+function hashHue(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return h%360; }
+function hslToHex(h,s,l){ s/=100; l/=100; const k=n=>(n+h/30)%12; const a=s*Math.min(l,1-l); const f=n=>l-a*Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n),1))); const toHex=x=>Math.round(255*x).toString(16).padStart(2,'0'); return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`; }
 function flavorToColor(f){ const k=normKey(f); if(FLAVOR_MAP[k]) return FLAVOR_MAP[k]; const hue=hashHue(k); return hslToHex(hue,68,68); }
 
-// --- Tiny value-noise for displacement (fast & dependency-free) -----------
+// --- Noise util for smudge -------------------------------------------------
 function makeNoise(seed){
   const r = n=>{ const x=Math.sin(n*127.1+seed*13.7)*43758.5453; return x-Math.floor(x); };
-  const gridSize = 256;
-  const grid = new Float32Array(gridSize*gridSize);
-  for(let y=0;y<gridSize;y++) for(let x=0;x<gridSize;x++) grid[y*gridSize+x]=r(x*12.9898+y*78.233);
+  const SIZE = 256;
+  const grid = new Float32Array(SIZE*SIZE);
+  for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++) grid[y*SIZE+x]=r(x*12.9898 + y*78.233);
   const lerp=(a,b,t)=>a+(b-a)*t;
   const smooth=t=>t*t*(3-2*t);
   return (x,y)=>{
-    x = (x%gridSize+gridSize)%gridSize; y=(y%gridSize+gridSize)%gridSize;
-    const x0=Math.floor(x), y0=Math.floor(y); const x1=(x0+1)%gridSize, y1=(y0+1)%gridSize;
+    x=(x%SIZE+SIZE)%SIZE; y=(y%SIZE+SIZE)%SIZE;
+    const x0=Math.floor(x), y0=Math.floor(y); const x1=(x0+1)%SIZE, y1=(y0+1)%SIZE;
     const fx=smooth(x-x0), fy=smooth(y-y0);
-    const v00=grid[y0*gridSize+x0], v10=grid[y0*gridSize+x1], v01=grid[y1*gridSize+x0], v11=grid[y1*gridSize+x1];
+    const v00=grid[y0*SIZE+x0], v10=grid[y0*SIZE+x1], v01=grid[y1*SIZE+x0], v11=grid[y1*SIZE+x1];
     return lerp(lerp(v00,v10,fx), lerp(v01,v11,fx), fy);
   };
 }
 
-// --- UI --------------------------------------------------------------------
-
-const PRESETS = [
-  "strawberry, lemon",
-  "mango, coconut, banana",
-  "blueberry, ube, grape",
-  "mint, lime, coconut",
-  "caramel, vanilla, coffee",
-  "peach, mango, passionfruit",
-  "calamansi, buko pandan",
-  "orange, chocolate",
-  "bubblegum, cotton candy",
-];
-
-export default function App() {
+// --- Component -------------------------------------------------------------
+export default function App(){
   const [flavorsInput, setFlavorsInput] = useState("ube, mango, coconut");
-  const [type, setType] = useState("smudge"); // "linear" | "radial" | "conic" | "smudge"
-  const [pattern, setPattern] = useState("none"); // "none" | "stripes" | "dots" | "noise"
+  const [gradientType, setGradientType] = useState("linear"); // linear | radial | conic
+  const [effect, setEffect] = useState("smudge"); // none | smear(smudge) | fractal? keep smudge for now
   const [angle, setAngle] = useState(30);
-  const [intensity, setIntensity] = useState(0.25);
-  const [resolution, setResolution] = useState(1536);
   const [radius, setRadius] = useState(50);
+  const [exportSize, setExportSize] = useState(()=>{
+    try { return parseInt(localStorage.getItem('lb_export_size') || '1536',10);} catch { return 1536;}
+  });
+  useEffect(()=>{ try{ localStorage.setItem('lb_export_size', String(exportSize)); }catch{} }, [exportSize]);
 
   // Smudge controls
   const [smudgeAmount, setSmudgeAmount] = useState(0.35);
   const [streakScale, setStreakScale] = useState(160);
   const [seed, setSeed] = useState(7);
-  const [quality, setQuality] = useState("fast"); // "fast" | "high"
+  const [quality, setQuality] = useState("fast"); // fast | high
 
   const canvasRef = useRef(null);
 
-  const flavors = useMemo(() => flavorsInput.split(/,|\\r?\\n/).map(s=>s.trim()).filter(Boolean).slice(0,8), [flavorsInput]);
-  const colors = useMemo(() => { const arr = flavors.map(flavorToColor); if(arr.length===1){ const h=hashHue(flavors[0]); const comp=hslToHex((h+200)%360,68,68); return [arr[0], comp]; } return arr;}, [flavors]);
+  const flavors = useMemo(()=> (
+    flavorsInput.split(/,|\\r?\\n/).map(s=>s.trim()).filter(Boolean).slice(0,8)
+  ), [flavorsInput]);
 
-  const cssGradient = useMemo(() => {
-    const stops = colors.map((c,i)=>`${c} ${(i/Math.max(colors.length-1,1))*100}%`).join(", ");
-    if (type === "linear" || type === "smudge") return `linear-gradient(${angle}deg, ${stops})`;
-    if (type === "radial") return `radial-gradient(circle ${radius}% at 50% 50%, ${stops})`;
-    return `conic-gradient(from ${angle}deg at 50% 50%, ${stops})`;
-  }, [colors, type, angle, radius]);
+  const colors = useMemo(()=>{
+    const arr = flavors.map(flavorToColor);
+    if(arr.length===1){ const h=hashHue(flavors[0]); arr.push(hslToHex((h+200)%360,68,68)); }
+    return arr.length?arr:["#ff7a00","#ffe066"];
+  }, [flavors]);
 
-  // keep canvas crisp on high-DPI and responsive to container size
+  // drawing util
+  function paintBaseGradient(ctx,w,h){
+    const rad=(angle*Math.PI)/180;
+    if(gradientType==='linear'){
+      const x1=w/2-Math.cos(rad)*w, y1=h/2-Math.sin(rad)*h;
+      const x2=w/2+Math.cos(rad)*w, y2=h/2+Math.sin(rad)*h;
+      const g=ctx.createLinearGradient(x1,y1,x2,y2);
+      colors.forEach((c,i)=>g.addColorStop(i/Math.max(colors.length-1,1), c));
+      ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+    }else if(gradientType==='radial'){
+      const maxR=Math.max(w,h)*(radius/50);
+      const g=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,maxR);
+      colors.forEach((c,i)=>g.addColorStop(i/Math.max(colors.length-1,1), c));
+      ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+    }else{ // conic approx
+      const cx=w/2, cy=h/2; const start=rad; const n=Math.max(128, colors.length*48);
+      for(let i=0;i<n;i++){
+        const t0=(i/n)*Math.PI*2+start, t1=((i+1)/n)*Math.PI*2+start;
+        const idx=Math.min(colors.length-1, Math.floor((i/(n-1))*colors.length));
+        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,Math.hypot(w,h), t0,t1); ctx.closePath();
+        ctx.fillStyle=colors[idx]; ctx.fill();
+      }
+    }
+  }
+
+  function applySmudge(ctx,canvas){
+    const w=canvas.width, h=canvas.height;
+    const rad=(angle*Math.PI)/180, ux=Math.cos(rad), uy=Math.sin(rad);
+    const px = quality==='fast'?2:1;
+    const disp = makeNoise(seed);
+    const maxDisp = smudgeAmount * Math.max(w,h) * 0.06;
+    const vx=-uy, vy=ux;
+    const src = ctx.getImageData(0,0,w,h);
+    const out = ctx.createImageData(w,h);
+    const data=src.data, odata=out.data;
+    for(let y=0;y<h;y+=px){
+      for(let x=0;x<w;x+=px){
+        const nBase = disp(x/streakScale*1.2, y/streakScale*1.2);
+        const nAlong = disp((x*ux+y*uy)/(streakScale*2), (x*vx+y*vy)/(streakScale*2));
+        const signed = (nBase*1.2 + nAlong*0.5) - 0.85;
+        const mag = Math.max(-1, Math.min(1, signed)) * maxDisp;
+        const wobble = disp(y/32, x/32) - 0.5;
+        const dx = ux*mag + vx*mag*0.15*wobble;
+        const dy = uy*mag + vy*mag*0.15*wobble;
+        let sx=Math.max(0, Math.min(w-1, Math.floor(x+dx)));
+        let sy=Math.max(0, Math.min(h-1, Math.floor(y+dy)));
+        const si=(sy*w+sx)*4;
+        for(let oy=0; oy<px; oy++){
+          for(let ox=0; ox<px; ox++){
+            const di=((y+oy)*w + (x+ox))*4;
+            odata[di]=data[si]; odata[di+1]=data[si+1]; odata[di+2]=data[si+2]; odata[di+3]=255;
+          }
+        }
+      }
+    }
+    ctx.putImageData(out,0,0);
+  }
+
+  // Render loop for single preview canvas
   useEffect(()=>{
-    const canvas = canvasRef.current; if(!canvas) return; const parent = canvas.parentElement; if(!parent) return;
+    const canvas = canvasRef.current; if(!canvas) return;
+    const parent = canvas.parentElement;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }); if(!ctx) return;
+
     const resize = () => {
       const rect = parent.getBoundingClientRect();
       const dpr = Math.min(3, window.devicePixelRatio || 1);
-      canvas.width = Math.max(512, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(512, Math.floor(rect.height * dpr));
+      const w = Math.max(512, Math.floor(rect.width * dpr));
+      const h = Math.max(400, Math.floor(rect.height * dpr * 0.6));
+      if (canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+      // repaint
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      paintBaseGradient(ctx, canvas.width, canvas.height);
+      if (effect === 'smudge') applySmudge(ctx, canvas);
     };
     resize();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
-  }, []);
+  }, [colors, gradientType, effect, angle, radius, smudgeAmount, streakScale, seed, quality]);
 
-  // --- Drawing -------------------------------------------------------------
-  useEffect(()=>{
-    const canvas = canvasRef.current; if(!canvas) return; const ctx = canvas.getContext("2d"); if(!ctx) return;
-    const w = canvas.width, h = canvas.height;
+  function copyCss(){
+    const stops = colors.map((c,i)=>`${c} ${(i/Math.max(colors.length-1,1))*100}%`).join(", ");
+    const css = gradientType==='linear'
+      ? `linear-gradient(${angle}deg, ${stops})`
+      : gradientType==='radial'
+        ? `radial-gradient(circle ${radius}% at 50% 50%, ${stops})`
+        : `conic-gradient(from ${angle}deg at 50% 50%, ${stops})`;
+    navigator.clipboard.writeText(css);
+  }
 
-    const paintLinear = () => {
-      const rad = (angle*Math.PI)/180; const x1=w/2-Math.cos(rad)*w; const y1=h/2-Math.sin(rad)*h; const x2=w/2+Math.cos(rad)*w; const y2=h/2+Math.sin(rad)*h; const g=ctx.createLinearGradient(x1,y1,x2,y2); colors.forEach((c,i)=>g.addColorStop(i/(colors.length-1), c)); ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
-    };
-
-    if (type === "linear") {
-      paintLinear();
-    } else if (type === "radial") {
-      const maxR=Math.max(w,h)*(radius/50); const g=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,maxR); colors.forEach((c,i)=>g.addColorStop(i/(colors.length-1),c)); ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
-    } else if (type === "conic") {
-      const cx=w/2, cy=h/2; const start=(angle*Math.PI)/180; const n=Math.max(64, colors.length*32);
-      for (let i=0;i<n;i++){ const t0=(i/n)*Math.PI*2+start; const t1=((i+1)/n)*Math.PI*2+start; const idx=Math.min(colors.length-1, Math.floor((i/(n-1))*colors.length)); ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,Math.hypot(w,h), t0,t1); ctx.closePath(); ctx.fillStyle=colors[idx]; ctx.fill(); }
-    } else if (type === "smudge") {
-      paintLinear();
-      const src = ctx.getImageData(0,0,w,h);
-      const out = ctx.createImageData(w,h);
-      const data = src.data; const odata = out.data;
-      const rad = (angle*Math.PI)/180; const ux=Math.cos(rad), uy=Math.sin(rad);
-      const px=Math.round(quality==="fast"?2:1);
-      const disp = makeNoise(seed);
-      const maxDisp = smudgeAmount * Math.max(w,h) * 0.06;
-      const stripeScale = streakScale;
-      const vx = -uy, vy = ux; 
-      for (let y=0;y<h;y+=px){
-        for (let x=0;x<w;x+=px){
-          const nBase = disp(x/stripeScale*1.2, y/stripeScale*1.2);
-          const nAlong = disp((x*ux + y*uy)/ (stripeScale*2), (x*vx + y*vy)/(stripeScale*2));
-          const signed = (nBase*1.2 + nAlong*0.5) - 0.85;
-          const mag = Math.max(-1, Math.min(1, signed)) * maxDisp;
-          const wobble = disp(y/32, x/32) - 0.5;
-          const dx = ux * mag + vx * mag * 0.15 * wobble;
-          const dy = uy * mag + vy * mag * 0.15 * wobble;
-          let sx = Math.max(0, Math.min(w-1, Math.floor(x + dx)));
-          let sy = Math.max(0, Math.min(h-1, Math.floor(y + dy)));
-          const si = (sy*w + sx) * 4;
-          for (let oy=0; oy<px; oy++){
-            for (let ox=0; ox<px; ox++){
-              const di = ((y+oy)*w + (x+ox)) * 4; 
-              odata[di]   = data[si];
-              odata[di+1] = data[si+1];
-              odata[di+2] = data[si+2];
-              odata[di+3] = 255;
-            }
-          }
-        }
-      }
-      ctx.putImageData(out,0,0);
-    }
-
-    // Pattern overlays
-    if (pattern !== "none") {
-      ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, intensity));
-      if (pattern === "stripes") { const stripeSize=Math.max(8, Math.floor(Math.min(w,h)/40)); ctx.translate(w/2,h/2); ctx.rotate((Math.PI/180)*angle); ctx.translate(-w/2,-h/2); ctx.fillStyle="#ffffff"; for (let x=-w; x<w*2; x+=stripeSize*2) ctx.fillRect(x,-h, stripeSize, h*3); }
-      else if (pattern === "dots") { const gap=Math.max(10, Math.floor(Math.min(w,h)/30)); const r=gap/6; ctx.fillStyle="#ffffff"; for (let yy=0;yy<h+gap;yy+=gap){ for(let xx=((yy/gap)%2?gap/2:0); xx<w+gap; xx+=gap){ ctx.beginPath(); ctx.arc(xx,yy,r,0,Math.PI*2); ctx.fill(); } } }
-      else if (pattern === "noise") { const img=ctx.getImageData(0,0,w,h); const d=img.data; for(let i=0;i<d.length;i+=4){ const n=(Math.random()*255)|0; d[i]=(d[i]*0.9+n*0.1)|0; d[i+1]=(d[i+1]*0.9+n*0.1)|0; d[i+2]=(d[i+2]*0.9+n*0.1)|0; } ctx.putImageData(img,0,0); }
-      ctx.restore();
-    }
-  }, [colors, type, angle, radius, pattern, intensity, resolution, smudgeAmount, streakScale, seed, quality]);
-
-  function copyCss(){ navigator.clipboard.writeText(cssGradient); }
   function downloadPng(){
-    const srcCanvas = canvasRef.current; if(!srcCanvas) return;
-    // Re-render at chosen resolution to ensure exported image quality
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const size = Math.floor(resolution * dpr);
     const out = document.createElement('canvas');
-    out.width = size; out.height = size;
-    const ctx = out.getContext('2d', { willReadFrequently: true });
-    // Paint base gradient
-    const angleRad = (angle*Math.PI)/180;
-    const x1=size/2-Math.cos(angleRad)*size, y1=size/2-Math.sin(angleRad)*size;
-    const x2=size/2+Math.cos(angleRad)*size, y2=size/2+Math.sin(angleRad)*size;
-    const grad = ctx.createLinearGradient(x1,y1,x2,y2);
-    colors.forEach((c,i)=>grad.addColorStop(i/(colors.length-1), c));
-    ctx.fillStyle=grad; ctx.fillRect(0,0,size,size);
-    // Smudge export path (if smudge type) | otherwise approximate other types
-    if (type === 'smudge'){
-      const src = ctx.getImageData(0,0,size,size);
-      const outImg = ctx.createImageData(size,size);
-      const data = src.data, odata = outImg.data;
-      const rad = angleRad; const ux=Math.cos(rad), uy=Math.sin(rad);
-      const px = Math.round(quality==='fast'?2:1);
-      const disp = makeNoise(seed);
-      const maxDisp = smudgeAmount * Math.max(size,size) * 0.06;
-      const stripeScale = streakScale * (size/1536);
-      const vx=-uy, vy=ux;
-      for (let y=0;y<size;y+=px){
-        for (let x=0;x<size;x+=px){
-          const nBase = disp(x/stripeScale*1.2, y/stripeScale*1.2);
-          const nAlong = disp((x*ux + y*uy)/(stripeScale*2), (x*vx + y*vy)/(stripeScale*2));
-          const signed = (nBase*1.2 + nAlong*0.5) - 0.85;
-          const mag = Math.max(-1, Math.min(1, signed)) * maxDisp;
-          const wobble = disp(y/32, x/32) - 0.5;
-          const dx = ux * mag + vx * mag * 0.15 * wobble;
-          const dy = uy * mag + vy * mag * 0.15 * wobble;
-          let sx = Math.max(0, Math.min(size-1, Math.floor(x + dx)));
-          let sy = Math.max(0, Math.min(size-1, Math.floor(y + dy)));
-          const si = (sy*size + sx) * 4;
-          for (let oy=0; oy<px; oy++){
-            for (let ox=0; ox<px; ox++){
-              const di = ((y+oy)*size + (x+ox)) * 4; 
-              odata[di]   = data[si];
-              odata[di+1] = data[si+1];
-              odata[di+2] = data[si+2];
-              odata[di+3] = 255;
-            }
-          }
-        }
-      }
-      ctx.putImageData(outImg,0,0);
-    } else if (type === 'radial') {
-      const maxR = Math.max(size,size) * (radius/50);
-      const g = ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,maxR);
-      colors.forEach((c,i)=>g.addColorStop(i/(colors.length-1), c));
-      ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
-    } else if (type === 'conic') {
-      const cx=size/2, cy=size/2; const start=angleRad; const n=Math.max(64, colors.length*32);
-      for (let i=0;i<n;i++){ const t0=(i/n)*Math.PI*2+start; const t1=((i+1)/n)*Math.PI*2+start; const idx=Math.min(colors.length-1, Math.floor((i/(n-1))*colors.length)); ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,Math.hypot(size,size), t0,t1); ctx.closePath(); ctx.fillStyle=colors[idx]; ctx.fill(); }
-    }
-    const a=document.createElement("a");
-    const date=new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
-    a.download=`lb-flavor-gradient-smudge-${date}.png`;
-    a.href=out.toDataURL("image/png");
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    out.width = Math.floor(exportSize * dpr);
+    out.height = Math.floor(exportSize * dpr);
+    const ctx = out.getContext('2d', { willReadFrequently: true }); if(!ctx) return;
+    paintBaseGradient(ctx, out.width, out.height);
+    if (effect === 'smudge') applySmudge(ctx, out);
+    const a = document.createElement('a');
+    a.download = `lokal-brew-visualizer-${Date.now()}.png`;
+    a.href = out.toDataURL('image/png');
     a.click();
   }
-  function surpriseMe(){ const pick=PRESETS[Math.floor(Math.random()*PRESETS.length)]; setFlavorsInput(pick); const types=["linear","radial","conic","smudge"]; setType(types[Math.floor(Math.random()*types.length)]); const pats=["none","stripes","dots","noise"]; setPattern(pats[Math.floor(Math.random()*pats.length)]); setAngle(Math.floor(Math.random()*360)); setSeed(Math.floor(Math.random()*9999)); }
 
-  const previewStyle = { backgroundImage: cssGradient };
+  // presets
+  const PRESETS = [
+    "ube, mango, coconut",
+    "caramel, vanilla, coffee",
+    "mint, lime, coconut",
+    "strawberry, lemon",
+    "blueberry, ube, grape",
+    "peach, mango, passionfruit"
+  ];
+  function surpriseMe(){
+    const pick = PRESETS[Math.floor(Math.random()*PRESETS.length)];
+    setFlavorsInput(pick);
+    setSeed(Math.floor(Math.random()*9999));
+  }
 
   return (
-    <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 p-6 md:p-10 font-sans">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Controls */}
-        <section className="lg:col-span-1 space-y-4">
-          <header className="flex items-center gap-2">
-            <Wand2 className="w-6 h-6" />
-            <h1 className="text-2xl font-bold">Flavor Gradient — Smudge Edition</h1>
-          </header>
+    <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 p-6 md:p-10">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <img src="/lb-logo.png" alt="LB" className="w-12 h-12 rounded-full bg-white/5 object-contain" onError={(e)=>{e.currentTarget.src='/lb-logo.svg'}} />
+          <div>
+            <h1 className="text-2xl font-extrabold">Lokal Brew Coffee Flavor Visualizer</h1>
+            <p className="text-sm text-neutral-400">Type flavors, tweak, and export. Preview matches the download.</p>
+          </div>
+        </div>
 
-          <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 space-y-4 shadow-xl">
-            <label className="text-sm text-neutral-300">Type flavor prompts (comma-separated or new line)</label>
-            <textarea className="w-full rounded-xl bg-neutral-800/70 border border-neutral-700 p-3 focus:outline-none focus:ring-2 focus:ring-amber-400 min-h-[76px]" value={flavorsInput} placeholder="e.g., ube, mango, coconut" onChange={(e)=>setFlavorsInput(e.target.value)} />
-
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Controls */}
+          <section className="order-2 lg:order-1 lg:col-span-1 bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 space-y-4">
+            <label className="text-sm text-neutral-300">Flavor prompts (comma or new line)</label>
+            <textarea className="w-full rounded-xl bg-neutral-800/70 border border-neutral-700 p-3 focus:outline-none focus:ring-2 focus:ring-amber-400 min-h-[76px]" value={flavorsInput} onChange={e=>setFlavorsInput(e.target.value)} placeholder="e.g., ube, mango, coconut" />
+            
+            {/* Chips */}
             <div className="flex flex-wrap gap-2">
               {colors.map((c,i)=> (
                 <div key={i} className="flex items-center gap-2">
@@ -289,70 +254,62 @@ export default function App() {
               ))}
             </div>
 
+            {/* Dropdowns */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-neutral-400">Gradient type</label>
-                <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={type} onChange={(e)=>setType(e.target.value)}>
-                  <option value="smudge">Smudge</option>
+                <label className="text-xs text-neutral-400">Gradient style</label>
+                <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={gradientType} onChange={e=>setGradientType(e.target.value)}>
                   <option value="linear">Linear</option>
                   <option value="radial">Radial</option>
                   <option value="conic">Conic</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-neutral-400">Pattern</label>
-                <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={pattern} onChange={(e)=>setPattern(e.target.value)}>
+                <label className="text-xs text-neutral-400">Effect</label>
+                <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={effect} onChange={e=>setEffect(e.target.value)}>
                   <option value="none">None</option>
-                  <option value="stripes">Stripes</option>
-                  <option value="dots">Dots</option>
-                  <option value="noise">Noise</option>
+                  <option value="smudge">Smudge (paint-like)</option>
                 </select>
               </div>
             </div>
 
-            {type !== "radial" && (
+            {/* Angle / Radius */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-neutral-400">Angle: {angle}°</label>
-                <input type="range" min={0} max={360} value={angle} onChange={(e)=>setAngle(parseInt(e.target.value))} className="w-full" />
+                <input type="range" min={0} max={360} value={angle} onChange={e=>setAngle(parseInt(e.target.value))} className="w-full" />
               </div>
-            )}
+              {gradientType==='radial' && (
+                <div>
+                  <label className="text-xs text-neutral-400">Radius: {radius}%</label>
+                  <input type="range" min={10} max={150} value={radius} onChange={e=>setRadius(parseInt(e.target.value))} className="w-full" />
+                </div>
+              )}
+            </div>
 
-            {type === "radial" && (
-              <div>
-                <label className="text-xs text-neutral-400">Radius: {radius}%</label>
-                <input type="range" min={10} max={150} value={radius} onChange={(e)=>setRadius(parseInt(e.target.value))} className="w-full" />
-              </div>
-            )}
-
-            {type === "smudge" && (
+            {/* Smudge controls when active */}
+            {effect==='smudge' && (
               <div className="space-y-3">
                 <div>
                   <label className="text-xs text-neutral-400">Smudge amount: {Math.round(smudgeAmount*100)}%</label>
-                  <input type="range" min={0} max={100} value={Math.round(smudgeAmount*100)} onChange={(e)=>setSmudgeAmount(parseInt(e.target.value)/100)} className="w-full" />
+                  <input type="range" min={0} max={100} value={Math.round(smudgeAmount*100)} onChange={e=>setSmudgeAmount(parseInt(e.target.value)/100)} className="w-full" />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-400">Streak scale: {streakScale}px</label>
-                  <input type="range" min={40} max={400} value={streakScale} onChange={(e)=>setStreakScale(parseInt(e.target.value))} className="w-full" />
+                  <input type="range" min={40} max={400} value={streakScale} onChange={e=>setStreakScale(parseInt(e.target.value))} className="w-full" />
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-xs text-neutral-400">Quality</label>
-                  <button onClick={()=>setQuality(q=>q==="fast"?"high":"fast")} className="px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400">{quality.toUpperCase()}</button>
-                  <button onClick={()=>setSeed(s=>s+1)} className="ml-auto flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-fuchsia-400"><RotateCw className="w-3 h-3"/> New seed</button>
+                  <button onClick={()=>setQuality(q=>q==='fast'?'high':'fast')} className="px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400">{quality.toUpperCase()}</button>
+                  <button onClick={()=>setSeed(s=>s+1)} className="ml-auto flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-fuchsia-400"><RotateCw className="w-3 h-3" /> New seed</button>
                 </div>
-                <p className="text-[11px] text-neutral-400">Smudge uses a noise-based displacement map to produce paint-like streaks along your chosen angle. Increase quality for sharper details (slower).</p>
               </div>
             )}
 
-            {pattern !== "none" && (
-              <div>
-                <label className="text-xs text-neutral-400">Pattern intensity: {Math.round(intensity * 100)}%</label>
-                <input type="range" min={0} max={100} value={Math.round(intensity*100)} onChange={(e)=>setIntensity(parseInt(e.target.value)/100)} className="w-full" />
-              </div>
-            )}
-
+            {/* Export */}
             <div>
               <label className="text-xs text-neutral-400">Export size</label>
-              <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={resolution} onChange={(e)=>setResolution(parseInt(e.target.value))}>
+              <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={exportSize} onChange={e=>setExportSize(parseInt(e.target.value))}>
                 <option value={512}>512 × 512</option>
                 <option value={1024}>1024 × 1024</option>
                 <option value={1536}>1536 × 1536</option>
@@ -360,56 +317,27 @@ export default function App() {
                 <option value={3072}>3072 × 3072</option>
                 <option value={4096}>4096 × 4096</option>
               </select>
-              <p className="text-[11px] text-neutral-500 mt-1">Larger sizes take longer to export.</p>
+              <p className="text-[11px] text-neutral-500 mt-1">Larger sizes may take longer to export.</p>
             </div>
 
             <div className="flex flex-wrap gap-2 pt-2">
-              <button onClick={copyCss} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 hover:border-amber-400"><Copy className="w-4 h-4"/> Copy CSS</button>
-              <button onClick={downloadPng} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500 text-neutral-900 font-semibold hover:bg-amber-400"><Download className="w-4 h-4"/> Download PNG</button>
-              <button onClick={surpriseMe} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 hover:border-fuchsia-400"><Sparkles className="w-4 h-4"/> Surprise me</button>
+              <button onClick={copyCss} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 hover:border-amber-400"><Copy className="w-4 h-4" /> Copy CSS</button>
+              <button onClick={downloadPng} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500 text-neutral-900 font-semibold hover:bg-amber-400"><Download className="w-4 h-4" /> Download PNG</button>
+              <button onClick={surpriseMe} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-800 border border-neutral-700 hover:border-fuchsia-400"><Sparkles className="w-4 h-4" /> Surprise me</button>
             </div>
+          </section>
 
-            <p className="text-xs text-neutral-400 pt-2">Tip: Great combos: “ube, mango, coconut”, “caramel, vanilla, coffee”, “mint, lime, coconut”. Unknown flavors map to pleasant pastels automatically.</p>
-          </div>
-        </section>
-
-        {/* Preview */}
-        <section className="lg:col-span-2 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-2xl border border-neutral-800 overflow-hidden">
-              <div className="p-3 text-sm text-neutral-300 flex items-center gap-2 bg-neutral-900/60 border-b border-neutral-800"><Plus className="w-4 h-4"/> Live CSS preview</div>
-              <div className="h-64 md:h-80" style={previewStyle} />
-              {type === "smudge" && (
-                <div className="p-2 text-[11px] text-neutral-400 border-t border-neutral-800">CSS preview shows the base linear gradient. Exported canvas displays the smudged result.</div>
-              )}
+          {/* Single baked preview (exports exactly) */}
+          <section className="order-1 lg:order-2 lg:col-span-2 rounded-2xl border border-neutral-800 overflow-hidden">
+            <div className="p-3 text-sm text-neutral-300 flex items-center gap-2 bg-neutral-900/60 border-b border-neutral-800">
+              <Wand2 className="w-4 h-4" /> Preview (matches the downloaded PNG)
             </div>
-            <div className="rounded-2xl border border-neutral-800 overflow-hidden">
-              <div className="p-3 text-sm text-neutral-300 flex items-center gap-2 bg-neutral-900/60 border-b border-neutral-800"><Wand2 className="w-4 h-4"/> Baked canvas (what exports)</div>
-              <div className="h-64 md:h-80 bg-neutral-900 flex items-center justify-center">
-                <canvas ref={canvasRef} className="w-full h-full object-cover" />
-              </div>
+            <div className="h-72 md:h-[28rem] bg-neutral-900 flex items-center justify-center">
+              <canvas ref={canvasRef} className="w-full h-full object-cover" />
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-800 overflow-hidden">
-            <div className="p-3 text-sm text-neutral-300 flex items-center gap-2 bg-neutral-900/60 border-b border-neutral-800">Palette</div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 p-3">
-              {PRESETS.map((p,i)=> (
-                <button key={i} onClick={()=>setFlavorsInput(p)} className="group rounded-xl overflow-hidden border border-neutral-800 hover:border-amber-400 transition-colors" title={p}>
-                  <div className="h-16" style={{ backgroundImage: makePreviewGradient(p) }} />
-                  <div className="p-2 text-xs text-neutral-300 text-left">{p}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
     </div>
   );
-}
-
-function makePreviewGradient(preset){
-  const cols = preset.split(/,|\\r?\\n/).map(s=>s.trim()).filter(Boolean).slice(0,5).map(flavorToColor);
-  const stops = cols.map((c,i)=>`${c} ${(i/Math.max(cols.length-1,1))*100}%`).join(", ");
-  return `linear-gradient(90deg, ${stops})`;
 }
