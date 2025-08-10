@@ -1,6 +1,7 @@
-# LB Flavor Gradient — Coffee Map + History
+# LB Flavor Gradient — Final App
 
-Includes expanded coffee flavor notes, palette history (localStorage), smear/linear/radial/conic, and export dropdown. Logo supported at `/public/lb-logo.png`.
+Single preview window (canvas that matches export), smear + fractal overlay, per-flavor stop sliders, coffee flavor notes,
+palette history (localStorage), export size dropdown (remembers last choice), and LB logo in /public.
 
 ## Run locally
 ```bash
