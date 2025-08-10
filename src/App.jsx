@@ -54,6 +54,31 @@ const FLAVOR_MAP = {
   dragonfruit: "#ff2d95",
   passionfruit: "#ffb000",
   kiwi: "#89d42d",
+
+  // Coffee notes (subset)
+  almond: "#deb887",
+  hazelnut: "#cfa07e",
+  walnut: "#b08466",
+  peanut: "#d6a77a",
+  pistachio: "#93c47d",
+  cashew: "#e6c9a8",
+  cocoa: "#6b3d2e",
+  dark_chocolate: "#3e2620",
+  milk_chocolate: "#7b4a36",
+  cacao_nib: "#4a2e25",
+  cinnamon: "#b6652a",
+  clove: "#5b2b19",
+  cardamom: "#9fb37a",
+  nutmeg: "#8b5a2b",
+  anise: "#3b2a2f",
+  honey: "#ffd166",
+  maple: "#bf7f30",
+  brown_sugar: "#b66a2e",
+  toffee: "#c68642",
+  bergamot: "#ffd27a",
+  jasmine_note: "#e8ffe8",
+  grapefruit: "#ff7666",
+  raspberry_note: "#e34b78",
 };
 
 function normKey(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim(); }
@@ -73,7 +98,7 @@ function flavorToColor(name) {
   return hslToHex(hue, 68, 68);
 }
 
-// ---------- Noise + fbm for fractal ----------
+// ---------- Noise + fbm ----------
 function makeNoise(seed) {
   const r = n => { const x = Math.sin(n * 127.1 + seed * 13.7) * 43758.5453; return x - Math.floor(x); };
   const SIZE = 256;
@@ -102,17 +127,15 @@ export default function App() {
   const [flavorsInput, setFlavorsInput] = useState("ube, mango, coconut");
   const [gradientType, setGradientType] = useState("linear"); // linear | radial | conic
   const [effect, setEffect] = useState("both"); // none | smear | fractal | both
-  const [pattern, setPattern] = useState("none"); // none | stripes | dots | noise
   const [angle, setAngle] = useState(30);
   const [radius, setRadius] = useState(50);
 
   // smear
   const [smearStrength, setSmearStrength] = useState(0.45);
-  const [streakScale, setStreakScale] = useState(160);
   const [seed, setSeed] = useState(7);
   const [quality, setQuality] = useState("fast");
 
-  // fractal overlay
+  // fractal
   const [fractalIntensity, setFractalIntensity] = useState(0.25);
   const [fractalScale, setFractalScale] = useState(140);
   const [fractalOctaves, setFractalOctaves] = useState(4);
@@ -160,7 +183,7 @@ export default function App() {
     return pairs;
   }, [colors, stops, autoSortStops]);
 
-  // base gradient painter
+  // draw gradient for a given ctx & size based on gradientType
   function paintBaseGradient(ctx, w, h) {
     const rad = (angle * Math.PI) / 180;
     if (gradientType === "linear") {
@@ -175,7 +198,7 @@ export default function App() {
       stopsWithColors.forEach(s => g.addColorStop(s.pos / 100, s.color));
       ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
     } else {
-      // conic approximation
+      // conic (approximate by wedges with color lerp)
       const cx=w/2, cy=h/2; const start=rad; const n=Math.max(128, stopsWithColors.length*48);
       const palette = stopsWithColors.slice().sort((a,b)=>a.pos-b.pos);
       const lerpRGB = (ca, cb, t) => {
@@ -206,47 +229,23 @@ export default function App() {
     }
   }
 
-  // effects
+  // apply effects to the same ctx
   function applyEffects(ctx, canvas) {
     const w = canvas.width, h = canvas.height;
     const doSmear = effect === "smear" || effect === "both";
     const doFractal = effect === "fractal" || effect === "both";
 
     if (doSmear) {
-      // smear similar to user's smudge
-      const rad = (angle * Math.PI) / 180; const ux = Math.cos(rad), uy = Math.sin(rad);
-      const px = quality === "fast" ? 2 : 1;
-      const noise = makeNoise(seed);
-      const maxDisp = smearStrength * Math.max(w, h) * 0.06;
-      const stripeScale = streakScale;
-      const vx = -uy, vy = ux;
-      const src = ctx.getImageData(0,0,w,h);
-      const out = ctx.createImageData(w,h);
-      const data = src.data, odata = out.data;
-      for (let y=0;y<h;y+=px){
-        for (let x=0;x<w;x+=px){
-          const nBase = noise(x/stripeScale*1.2, y/stripeScale*1.2);
-          const nAlong = noise((x*ux + y*uy)/(stripeScale*2), (x*vx + y*vy)/(stripeScale*2));
-          const signed = (nBase*1.2 + nAlong*0.5) - 0.85;
-          const mag = Math.max(-1, Math.min(1, signed)) * maxDisp;
-          const wobble = noise(y/32, x/32) - 0.5;
-          const dx = ux * mag + vx * mag * 0.15 * wobble;
-          const dy = uy * mag + vy * mag * 0.15 * wobble;
-          let sx = Math.max(0, Math.min(w-1, Math.floor(x + dx)));
-          let sy = Math.max(0, Math.min(h-1, Math.floor(y + dy)));
-          const si = (sy*w + sx) * 4;
-          for (let oy=0; oy<px; oy++){
-            for (let ox=0; ox<px; ox++){
-              const di = ((y+oy)*w + (x+ox)) * 4;
-              odata[di]   = data[si];
-              odata[di+1] = data[si+1];
-              odata[di+2] = data[si+2];
-              odata[di+3] = 255;
-            }
-          }
-        }
+      const rad = (angle * Math.PI) / 180;
+      const passes = Math.max(4, Math.round(24 * smearStrength));
+      const shift = Math.max(1, Math.round((w + h) * 0.0015 * smearStrength));
+      ctx.globalAlpha = 0.06;
+      for (let i = 0; i < passes; i++) {
+        const dx = Math.cos(rad) * shift * (i + 1);
+        const dy = Math.sin(rad) * shift * (i + 1);
+        ctx.drawImage(canvas, dx, dy);
       }
-      ctx.putImageData(out,0,0);
+      ctx.globalAlpha = 1;
     }
 
     if (doFractal) {
@@ -269,30 +268,14 @@ export default function App() {
       }
       ctx.putImageData(img, 0, 0);
     }
-
-    // optional pattern overlay (preserved from user's edits)
-    if (pattern !== "none") {
-      ctx.save(); ctx.globalAlpha = 0.25;
-      if (pattern === "stripes") {
-        const stripeSize = Math.max(8, Math.floor(Math.min(w,h)/40));
-        ctx.translate(w/2,h/2); ctx.rotate((Math.PI/180)*angle); ctx.translate(-w/2,-h/2);
-        ctx.fillStyle = "#ffffff"; for (let x=-w; x<w*2; x+=stripeSize*2) ctx.fillRect(x,-h, stripeSize, h*3);
-      } else if (pattern === "dots") {
-        const gap = Math.max(10, Math.floor(Math.min(w,h)/30)); const r = gap/6; ctx.fillStyle = "#ffffff";
-        for (let yy=0; yy<h+gap; yy+=gap) { for (let xx=((yy/gap)%2?gap/2:0); xx<w+gap; xx+=gap) { ctx.beginPath(); ctx.arc(xx,yy,r,0,Math.PI*2); ctx.fill(); } }
-      } else if (pattern === "noise") {
-        const img=ctx.getImageData(0,0,w,h); const d=img.data; for(let i=0;i<d.length;i+=4){ const n=(Math.random()*255)|0; d[i]=(d[i]*0.9+n*0.1)|0; d[i+1]=(d[i+1]*0.9+n*0.1)|0; d[i+2]=(d[i+2]*0.9+n*0.1)|0; } ctx.putImageData(img,0,0);
-      }
-      ctx.restore();
-    }
   }
 
   // draw preview
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas) return;
-    const parent = canvas.parentElement;
     const ctx = canvas.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
 
+    const parent = canvas.parentElement;
     const rect = parent ? parent.getBoundingClientRect() : { width: 900, height: 520 };
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     const w = Math.max(512, Math.floor(rect.width * dpr));
@@ -302,7 +285,7 @@ export default function App() {
     ctx.clearRect(0, 0, w, h);
     paintBaseGradient(ctx, w, h);
     applyEffects(ctx, canvas);
-  }, [stopsWithColors, angle, radius, gradientType, effect, pattern, smearStrength, streakScale, seed, quality, fractalIntensity, fractalScale, fractalOctaves]);
+  }, [stopsWithColors, angle, radius, gradientType, effect, smearStrength, seed, quality, fractalIntensity, fractalScale, fractalOctaves]);
 
   function copyCss() {
     const str = stopsWithColors.map(s => `${s.color} ${Math.max(0, Math.min(100, s.pos))}%`).join(", ");
@@ -337,7 +320,7 @@ export default function App() {
       "blueberry, ube, grape",
       "mint, lime, coconut",
       "caramel, vanilla, coffee",
-      "peach, mango, passionfruit",
+      "bergamot, jasmine, honey",
       "raspberry, cacao nib, hazelnut"
     ];
     const pick = PRESETS[Math.floor(Math.random() * PRESETS.length)];
@@ -375,18 +358,20 @@ export default function App() {
               </div>
             </div>
 
-            {/* History grid */}
+            {/* History */}
             <div className="rounded-2xl border border-neutral-800 overflow-hidden">
-              <div className="p-3 text-sm text-neutral-300 bg-neutral-900/60 border-b border-neutral-800 flex items-center gap-2"><History className="w-4 h-4"/> Palette history</div>
+              <div className="p-3 text-sm text-neutral-300 bg-neutral-900/60 border-b border-neutral-800 flex items-center gap-2">
+                <History className="w-4 h-4"/> Palette history
+              </div>
               <div className="p-3 flex flex-wrap gap-2">
                 <button onClick={saveCurrentToHistory} className="text-xs px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400 flex items-center gap-1"><Plus className="w-3 h-3"/> Save current</button>
                 <button onClick={() => setHistory([])} className="text-xs px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-red-500 flex items-center gap-1"><Trash2 className="w-3 h-3"/> Clear</button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 p-3">
-                {history.length === 0 and <div className="text-xs text-neutral-400 col-span-full">No saved palettes yet.</div>}
+                {history.length === 0 && <div className="text-xs text-neutral-400 col-span-full">No saved palettes yet.</div>}
                 {history.map((p, i) => (
                   <button key={i} onClick={() => setFlavorsInput(p)} className="group rounded-xl overflow-hidden border border-neutral-800 hover:border-amber-400 transition-colors" title={p}>
-                    <div className="h-12" style={{ backgroundImage: makePreviewGradient(p) }} />
+                    <div className="h-12" style={{ backgroundImage: `linear-gradient(90deg, ${p.split(/,|\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,5).map(flavorToColor).map((c,i,arr)=>`${c} ${(i/Math.max(arr.length-1,1))*100}%`).join(", ")})` }} />
                     <div className="p-2 text-[11px] text-neutral-300 text-left truncate">{p}</div>
                   </button>
                 ))}
@@ -436,17 +421,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Pattern (preserved) */}
-              <div>
-                <label className="text-xs text-neutral-400">Pattern</label>
-                <select className="w-full bg-neutral-800/70 border border-neutral-700 rounded-xl p-2" value={pattern} onChange={e => setPattern(e.target.value)}>
-                  <option value="none">None</option>
-                  <option value="stripes">Stripes</option>
-                  <option value="dots">Dots</option>
-                  <option value="noise">Noise</option>
-                </select>
-              </div>
-
               {/* Angle / Radius */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -461,22 +435,56 @@ export default function App() {
                 )}
               </div>
 
+              {/* Per-flavor stop sliders */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-neutral-400">Color stops</label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-neutral-400 flex items-center gap-1">
+                      <input type="checkbox" checked={autoSortStops} onChange={e => setAutoSortStops(e.target.checked)} />
+                      Auto-sort
+                    </label>
+                    <button
+                      onClick={() => {
+                        const even = colors.map((_, i) => Math.round((i / Math.max(colors.length - 1, 1)) * 100));
+                        setStops(even);
+                      }}
+                      className="text-[11px] px-2 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400"
+                    >
+                      Distribute evenly
+                    </button>
+                  </div>
+                </div>
+                {colors.map((c, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="w-5 h-5 rounded-full border border-white/20 shrink-0" style={{ backgroundColor: c }} />
+                    <span className="text-xs text-neutral-300 w-28 truncate">{flavors[i] || `Stop ${i + 1}`}</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={stops[i] ?? 0}
+                      onChange={e => {
+                        const v = Math.max(0, Math.min(100, parseInt(e.target.value)));
+                        setStops(prev => {
+                          const base = prev.length ? prev : colors.map((_, j) => Math.round((j / Math.max(colors.length - 1, 1)) * 100));
+                          const next = [...base];
+                          next[i] = v;
+                          return next;
+                        });
+                      }}
+                      className="w-full"
+                    />
+                    <span className="text-xs text-neutral-400 w-10 text-right">{stops[i] ?? 0}%</span>
+                  </div>
+                ))}
+              </div>
+
               {/* Effect controls */}
               {["smear","both"].includes(effect) && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-neutral-400">Smear strength: {Math.round(smearStrength * 100)}%</label>
-                    <input type="range" min={0} max={100} value={Math.round(smearStrength * 100)} onChange={e => setSmearStrength(parseInt(e.target.value) / 100)} className="w-full" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-neutral-400">Streak scale: {streakScale}px</label>
-                    <input type="range" min={40} max={400} value={streakScale} onChange={e => setStreakScale(parseInt(e.target.value))} className="w-full" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-neutral-400">Quality</label>
-                    <button onClick={() => setQuality(q => q === "fast" ? "high" : "fast")} className="px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-amber-400">{quality.toUpperCase()}</button>
-                    <button onClick={() => setSeed(s => s + 1)} className="ml-auto flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-fuchsia-400"><RotateCw className="w-3 h-3" /> New seed</button>
-                  </div>
+                <div>
+                  <label className="text-xs text-neutral-400">Smear strength: {Math.round(smearStrength * 100)}%</label>
+                  <input type="range" min={0} max={100} value={Math.round(smearStrength * 100)} onChange={e => setSmearStrength(parseInt(e.target.value) / 100)} className="w-full" />
                 </div>
               )}
               {["fractal","both"].includes(effect) && (
@@ -492,6 +500,10 @@ export default function App() {
                   <div>
                     <label className="text-xs text-neutral-400">Fractal octaves: {fractalOctaves}</label>
                     <input type="range" min={2} max={7} value={fractalOctaves} onChange={e => setFractalOctaves(parseInt(e.target.value))} className="w-full" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-neutral-400">Seed</label>
+                    <button onClick={() => setSeed(s => s + 1)} className="ml-auto flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-neutral-700 bg-neutral-800 hover:border-fuchsia-400"><RotateCw className="w-3 h-3" /> New seed</button>
                   </div>
                 </div>
               )}
