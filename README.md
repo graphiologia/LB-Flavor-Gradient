@@ -1,6 +1,6 @@
-# LB Flavor Gradient — Web App
+# LB Flavor Gradient — Sliders Build
 
-A shareable web app that turns flavor prompts into smeared/fractal gradients. Built with **Vite + React + Tailwind**. Includes brand logo, export size dropdown, and PNG export.
+This build matches your preview: LB branding + per‑flavor stop sliders + smudge option + export dropdown, with logo included.
 
 ## Run locally
 ```bash
